@@ -21,6 +21,14 @@ public class App
         JavaMonitor monitor = new JavaMonitor(id, arrs);
         monitor.initializeCommunication(port);
 
+        if (id == 100) {
+            try {
+                Thread.sleep(5000);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         monitor.beginSynchronized();
         for (i = 0; i < 20; i++) {
             System.out.println("Im doing something...");
@@ -29,7 +37,7 @@ public class App
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            if (i == 10 && id == 200) {
+            if (i == 10 && (id == 200 || id == 300)) {
                 System.out.println(id + ") I sleep...");
                 monitor.blockWait();
                 System.out.println(id + ") I'm waking up, I feel it in my bones...");
@@ -41,7 +49,8 @@ public class App
         } catch (Exception e) {
             e.printStackTrace();
         }
-        monitor.signal();
+        if (id == 100)
+            monitor.signalAll();
         monitor.endSynchronized();
     }
 }

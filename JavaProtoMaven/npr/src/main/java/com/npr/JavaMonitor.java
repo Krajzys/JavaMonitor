@@ -179,7 +179,9 @@ public class JavaMonitor {
                         }
 
                         if (idReceiver == id || idReceiver == BROADCAST_ID) {
-                            sleeping.release();
+                            if (sleeping.availablePermits() == 0) {
+                                sleeping.release();
+                            }
                         }
                     }
                 }
@@ -377,11 +379,19 @@ public class JavaMonitor {
     }
 
     public void beginSynchronized() {
-        try {
-            this.lockPreInit.acquire();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        boolean isCommunicationInitialized = true;
+        synchronized (lockInit) {
+            isCommunicationInitialized = communicationInitialized;
         }
+        System.err.println("Before acquire");
+        if (!isCommunicationInitialized) {
+            try {
+                this.lockPreInit.acquire();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        System.err.println("After acquire");
 
         synchronized (lockAcks) {
             acks = 0;
@@ -391,6 +401,7 @@ public class JavaMonitor {
             priorityList.add(message);
         }
         wantsCriticalSection = true;
+        System.err.println("sending request");
         sendAll(message);
 
         try {
@@ -407,11 +418,9 @@ public class JavaMonitor {
             if (priorityList.size() > 0 && priorityList.peek().getIdSender() == id)
                 priorityList.remove();
         }
+        criticalSection.release();
         sendAll(message);
         System.out.println("[INFO] " + id + ") Releasing critical section");
-
-        // TODO: Implement this
-        return ;
     }
 
     public void blockWait() {
@@ -429,6 +438,8 @@ public class JavaMonitor {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        System.err.println("Trying to acquire section again!");
+        beginSynchronized();
     }
 
     public void signal() {
