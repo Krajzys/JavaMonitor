@@ -21,7 +21,7 @@ public class App
         JavaMonitor monitor = new JavaMonitor(port, arrs);
         monitor.initializeCommunication();
 
-        if (id == 1234) {
+        if (id == 5555 || id == 5556) {
             try {
                 Thread.sleep(5000);
             } catch (Exception e) {
@@ -38,9 +38,9 @@ public class App
                 e.printStackTrace();
             }
             if (i == 10 && (id == 1235 || id == 1236)) {
-                System.out.println(id + ") I sleep...");
+                System.out.println("I sleep...");
                 monitor.blockWait();
-                System.out.println(id + ") I'm waking up, I feel it in my bones...");
+                System.out.println("I'm waking up, I feel it in my bones...");
             }
         }
         System.out.println("Im holding critical section for no reason...\n\n\n");
@@ -49,7 +49,9 @@ public class App
         } catch (Exception e) {
             e.printStackTrace();
         }
-        if (id == 1234)
+        if (id == 5557)
+            monitor.blockWait();
+        if (id == 5555)
             monitor.signalAll();
         monitor.endSynchronized();
 

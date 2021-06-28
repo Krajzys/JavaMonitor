@@ -28,6 +28,7 @@ public class JavaMonitor {
     private Object lockAcks = new Object();
     private Object lockPrio = new Object();
     private Object lockSleep = new Object();
+    private Object lockSignal = new Object();
     private Semaphore lockPreInit = new Semaphore(0);
     private Semaphore criticalSection = new Semaphore(0);
     private Semaphore sleeping = new Semaphore(0);
@@ -37,7 +38,9 @@ public class JavaMonitor {
     private volatile boolean communicationShouldEnd = false;
     private int initializationPhase = 0;
     private boolean wantsCriticalSection = false;
+    private boolean hasCriticalSection  = false;
     private ZContext context;
+    private int signalsToSend = 0;
 
     // może rozszerzyć inicjalizację o error (jak ktoś użył 2 takich samych portów)
 
@@ -77,7 +80,7 @@ public class JavaMonitor {
             System.out.println("[INFO] " + port + ") Created ReceiverMonitor");
             
             while(!communicationShouldEnd) {
-                System.err.println("[DEBUG] " + port + ") Waiting for message...");
+                //System.err.println("[DEBUG] " + port + ") Waiting for message...");
                 Lamport message = recvMessage();
                 if (message == null) continue;
 
@@ -105,7 +108,7 @@ public class JavaMonitor {
                     }
                     
                     synchronized(lockPhase) {
-                        System.out.println("[DEBUG] " + port + ") phaseOne: " + phaseOnes + "; phaseTwo: " + phaseTwos + "; size:" + addresses.size());
+                        //System.out.println("[DEBUG] " + port + ") phaseOne: " + phaseOnes + "; phaseTwo: " + phaseTwos + "; size:" + addresses.size());
                         if (phaseOnes == addresses.size() && initializationPhase < 1) {
                             initializationPhase = 1;
                             System.out.println("[INFO] " + port + ") Changing phase to 1 (sending REPLY)");
@@ -134,12 +137,12 @@ public class JavaMonitor {
                             acksMap.replace(message.getIdSender(), true);
                         }
 
-                        System.out.print("[DEBUG] " + port + ") ");
-                        int tid = 0;
-                        for (Lamport mesg: priorityList) {
-                            System.out.println(tid + " CLOCK:" + mesg.getClock() + " IDSENDER:" + mesg.getIdSender());
-                            tid += 1;
-                        }
+                        //System.out.print("[DEBUG] " + port + ") ");
+                        // int tid = 0;
+                        // for (Lamport mesg: priorityList) {
+                        //     System.out.println(tid + " CLOCK:" + mesg.getClock() + " IDSENDER:" + mesg.getIdSender());
+                        //     tid += 1;
+                        // }
 
                         tryEnterCriticalSection();
                     }
@@ -218,7 +221,7 @@ public class JavaMonitor {
                 return null;
             }
 
-            System.out.println("[DEBUG] " + port + ") received message: from " + message.getIdSender() + "; to " + message.getIdReceiver() + "; type " + message.getMessageType().name() + "; clock " + message.getClock() + "; acks " + getAcks());
+            //System.out.println("[DEBUG] " + port + ") received message: from " + message.getIdSender() + "; to " + message.getIdReceiver() + "; type " + message.getMessageType().name() + "; clock " + message.getClock() + "; acks " + getAcks());
 
             synchronized (lockClock) {
                 lamportClock = Long.max(message.getClock(), lamportClock) + 1;
@@ -260,15 +263,15 @@ public class JavaMonitor {
                 }
                 if (localInitializationPhase == 0) {
                     message = createMessage(BROADCAST_ID, MessageType.REQUEST_INITIAL);
-                    System.out.println("[DEBUG] " + port + ") Sending REQUEST!");
+                    //System.out.println("[DEBUG] " + port + ") Sending REQUEST!");
                 }
                 else if (localInitializationPhase == 1) {
                     message = createMessage(BROADCAST_ID, MessageType.REPLY_INITIAL);
-                    System.out.println("[DEBUG] " + port + ") Sending REPLY!");
+                    //System.out.println("[DEBUG] " + port + ") Sending REPLY!");
                 }
                 else if (localInitializationPhase == 2) {
                     message = createMessage(BROADCAST_ID, MessageType.RELEASE_INITIAL);
-                    System.out.println("[DEBUG] " + port + ") Sending RELEASE!");
+                    //System.out.println("[DEBUG] " + port + ") Sending RELEASE!");
                     synchronized (lockInit) {
                         communicationInitialized = true;
                         System.out.println("[INFO] " + port + ") Initialization algorithm finished!");
@@ -403,6 +406,20 @@ public class JavaMonitor {
             e.printStackTrace();
         }
 
+        initArray.clear();
+        acksMap.clear();
+        addresses.clear();
+        sleepList.clear();
+        priorityList.clear();
+        lockPreInit = new Semaphore(0);
+        criticalSection = new Semaphore(0);
+        sleeping = new Semaphore(0);
+        lamportClock = 0;
+        communicationInitialized = false;
+        communicationShouldEnd = false;
+        initializationPhase = 0;
+        wantsCriticalSection = false;
+
         return true;
     }
 
@@ -428,6 +445,10 @@ public class JavaMonitor {
         synchronized (lockInit) {
             isCommunicationInitialized = communicationInitialized;
         }
+        if (hasCriticalSection && isCommunicationInitialized) {
+            System.err.println("Can't begin synchronized block twice!");
+            return;
+        }
         if (!isCommunicationInitialized) {
             try {
                 this.lockPreInit.acquire();
@@ -442,7 +463,6 @@ public class JavaMonitor {
             priorityList.add(message);
         }
         wantsCriticalSection = true;
-        System.err.println("sending request");
         sendAll(message);
 
         try {
@@ -450,9 +470,18 @@ public class JavaMonitor {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+        hasCriticalSection = true;
     }
 
     public void endSynchronized() {
+        boolean isCommunicationInitialized = true;
+        synchronized (lockInit) {
+            isCommunicationInitialized = communicationInitialized;
+        }
+        if (!isCommunicationInitialized || !hasCriticalSection) {
+            System.err.println("Can't end block if it hasn't started");
+            return;
+        }
         Lamport message = createMessage(BROADCAST_ID, MessageType.RELEASE);
         wantsCriticalSection = false;
         synchronized (lockPrio) {
@@ -461,6 +490,22 @@ public class JavaMonitor {
         }
         criticalSection.release();
         sendAll(message);
+        hasCriticalSection = false;
+
+        synchronized (lockSleep) {
+            int i = 0;
+            for (i = 0; i < signalsToSend && i < sleepList.size(); i++) {
+                Lamport messageSignal = createMessage(sleepList.get(i), MessageType.WAKE);
+                sendAll(messageSignal);
+            }
+            for (int j = 0; j < i; j++) {
+                sleepList.remove(0);
+            }
+        }
+        synchronized (lockSignal) {
+            signalsToSend = 0;
+        }
+
         System.out.println("[INFO] " + port + ") Releasing critical section");
     }
 
@@ -484,25 +529,29 @@ public class JavaMonitor {
     }
 
     public void signal() {
-        int idToWake = 0;
-        boolean someoneIsSleeping = false;
-        synchronized (lockSleep) {
-            if (sleepList.size() > 0) {
-                idToWake = sleepList.get(0);
-                someoneIsSleeping = true;
-            }
-        }
-        if (someoneIsSleeping) {
-            Lamport message = createMessage(idToWake, MessageType.WAKE);
-            sendAll(message);
-        }
+        // int idToWake = 0;
+        // boolean someoneIsSleeping = false;
+        signalsToSend += 1;
+        // synchronized (lockSleep) {
+        //     if (sleepList.size() > 0) {
+        //         idToWake = sleepList.get(0);
+        //         someoneIsSleeping = true;
+        //     }
+        // }
+        // if (someoneIsSleeping) {
+        //     Lamport message = createMessage(idToWake, MessageType.WAKE);
+        //     sendAll(message);
+        // }
     }
 
     public void signalAll() {
         synchronized (lockSleep) {
-            sleepList.clear();
+            signalsToSend = sleepList.size();
         }
-        Lamport message = createMessage(BROADCAST_ID, MessageType.WAKE);
-        sendAll(message);
+        // synchronized (lockSleep) {
+        //     sleepList.clear();
+        // }
+        // Lamport message = createMessage(BROADCAST_ID, MessageType.WAKE);
+        // sendAll(message);
     }
 }
