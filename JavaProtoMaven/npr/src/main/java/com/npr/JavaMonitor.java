@@ -176,11 +176,11 @@ public class JavaMonitor {
                         synchronized (lockSleep) {
                             sleepList.add(message.getIdSender());
                         }
-                        synchronized (lockPrio) {
-                            if (priorityList.size() > 0 && message.getIdSender() == priorityList.peek().getIdSender()) {
-                                priorityList.remove();
-                            }
-                        }
+                        // synchronized (lockPrio) {
+                        //     if (priorityList.size() > 0 && message.getIdSender() == priorityList.peek().getIdSender()) {
+                        //         priorityList.remove();
+                        //     }
+                        // }
                         tryEnterCriticalSection();
                     }
                     else if (mType == MessageType.WAKE) {
@@ -519,6 +519,10 @@ public class JavaMonitor {
                 priorityList.remove();
         }
         sendAll(message);
+        message = createMessage(BROADCAST_ID, MessageType.RELEASE);
+        sendAll(message);
+        hasCriticalSection = false;
+
         try {
             sleeping.acquire();
         } catch (Exception e) {
